@@ -4,7 +4,7 @@ const port = Number(process.env.EXTERNAL_DEMO_PORT ?? 4273);
 const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
-  testDir: './tests',
+  testDir: './',
   timeout: 30_000,
   use: {
     baseURL,
@@ -22,4 +22,3 @@ export default defineConfig({
     },
   ],
 });
-
