@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import type { Connect } from 'vite';
 
-const checkoutFixed = false;
+const checkoutFixed = true;
 
 function checkoutSessionMiddleware(): Connect.NextHandleFunction {
   return (req, res, next) => {
@@ -40,4 +40,3 @@ export default defineConfig({
     },
   ],
 });
-
