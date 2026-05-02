@@ -1,0 +1,36 @@
+name: Annotator QA
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  workflow_dispatch:
+    inputs:
+      report_id:
+        required: false
+        type: string
+      target_url:
+        required: false
+        type: string
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install chromium
+      - uses: ibrolord/annotate@main
+        with:
+          api-url: https://annotate-api-production.up.railway.app
+          runner-token: ${{ secrets.ANNOTATOR_QA_RUNNER_TOKEN }}
+          report-id: ${{ inputs.report_id }}
+          target-url: ${{ inputs.target_url || vars.ANNOTATOR_QA_TARGET_URL }}
+          git-ref: ${{ github.sha }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          comment-on-pr: true
+
