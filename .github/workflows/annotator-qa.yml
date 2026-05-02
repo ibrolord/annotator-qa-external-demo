@@ -24,13 +24,56 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install chromium
-      - uses: ibrolord/annotate@main
-        with:
-          api-url: https://annotate-api-production.up.railway.app
-          runner-token: ${{ secrets.ANNOTATOR_QA_RUNNER_TOKEN }}
-          report-id: ${{ inputs.report_id }}
-          target-url: ${{ inputs.target_url || vars.ANNOTATOR_QA_TARGET_URL }}
-          git-ref: ${{ github.sha }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          comment-on-pr: true
+      - name: Resolve Annotator report
+        id: report
+        env:
+          INPUT_REPORT_ID: ${{ inputs.report_id }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const explicit = process.env.INPUT_REPORT_ID || '';
+          const source = `${process.env.PR_TITLE || ''}\n${process.env.PR_BODY || ''}`;
+          const match = explicit.match(/[a-f0-9]{32}/i) || source.match(/[a-f0-9]{32}/i);
+          console.log(`report_id=${match ? match[0] : ''}`);
+          NODE
 
+      - name: Validate Annotator QA configuration
+        env:
+          REPORT_ID: ${{ steps.report.outputs.report_id }}
+          RUNNER_TOKEN: ${{ secrets.ANNOTATOR_QA_RUNNER_TOKEN }}
+          TARGET_URL: ${{ inputs.target_url || vars.ANNOTATOR_QA_TARGET_URL }}
+        run: |
+          test -n "$RUNNER_TOKEN"
+          if [ -z "$REPORT_ID" ]; then
+            echo "No Annotator report ID found; skipping verification for this PR."
+            exit 0
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            echo "No Annotator target URL configured; skipping verification."
+            exit 0
+          fi
+          case "$TARGET_URL" in
+            http://127.0.0.1*|http://localhost*)
+              echo "Target URL is local-only ($TARGET_URL); GitHub-hosted runners cannot reach it. Local proof must run scripts/qa/run-verification.mjs."
+              exit 0
+              ;;
+          esac
+
+      - name: Download Annotator verification runner
+        if: ${{ steps.report.outputs.report_id != '' && vars.ANNOTATOR_QA_TARGET_URL != '' && !startsWith(vars.ANNOTATOR_QA_TARGET_URL, 'http://127.0.0.1') && !startsWith(vars.ANNOTATOR_QA_TARGET_URL, 'http://localhost') }}
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/ibrolord/annotate/main/scripts/qa/run-verification.mjs -o /tmp/annotator-run-verification.mjs
+
+      - name: Run Annotator QA verification
+        if: ${{ steps.report.outputs.report_id != '' && vars.ANNOTATOR_QA_TARGET_URL != '' && !startsWith(vars.ANNOTATOR_QA_TARGET_URL, 'http://127.0.0.1') && !startsWith(vars.ANNOTATOR_QA_TARGET_URL, 'http://localhost') }}
+        env:
+          ANNOTATE_API_URL: https://annotate-api-production.up.railway.app
+          ANNOTATE_RUNNER_TOKEN: ${{ secrets.ANNOTATOR_QA_RUNNER_TOKEN }}
+          ANNOTATE_REPORT_ID: ${{ steps.report.outputs.report_id }}
+          ANNOTATE_TARGET_URL: ${{ inputs.target_url || vars.ANNOTATOR_QA_TARGET_URL }}
+          ANNOTATE_GIT_REF: ${{ github.sha }}
+          ANNOTATE_RUNNER: github_actions
+          ANNOTATE_REPO_DIR: ${{ github.workspace }}
+          ANNOTATE_PLAYWRIGHT_COMMAND: pnpm exec playwright test
+        run: node /tmp/annotator-run-verification.mjs
